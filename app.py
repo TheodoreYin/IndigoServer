@@ -10,7 +10,7 @@ PORT = "9000"
 
 
 async def init(loop):
-    app = web.Application(loop)
+    app = web.Application(loop=loop)
     app.router.add_route("GET", "/", index)
     server = await loop.create_server(app.make_handler(), HOST, PORT)
     logging.info("Server started at http://{}:{}".format(HOST, PORT))
@@ -18,8 +18,8 @@ async def init(loop):
 
 
 def index(request):
-    resp = "<h1> Hello World </h1>"
-    return web.Response(body=resp.encode())
+    resp = "<h1>Hello World</h1>"
+    return web.Response(body=resp.encode(), content_type="text/html")
 
 
 def main():
@@ -27,5 +27,5 @@ def main():
     loop.run_until_complete(init(loop))
     loop.run_forever()
 
-if __name__ == "__main":
+if __name__ == "__main__":
     main()
