@@ -135,7 +135,7 @@ class FloatField(Field):
 
 class Model(metaclass=ModelMeta):
     @classmethod
-async def get(cls, **kwargs):
+    async def get(cls, **kwargs):
         sql = ["select * from `{}`".format(cls.__name__)]
         args = []
         orderby = kwargs.pop("orderby", None)
