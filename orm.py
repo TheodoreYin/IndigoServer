@@ -1,5 +1,4 @@
 import aiomysql
-import asyncio
 import logging
 import numbers
 from collections.abc import Sequence
