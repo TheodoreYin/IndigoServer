@@ -8,6 +8,10 @@ logging.basicConfig(level=logging.INFO,
 
 
 async def create_pool(loop, **kwargs):
+    """
+    create connection pool for mysql connections
+    using global variable __pool to access pool
+    """
     logging.info("Create database connection pool...")
     global __pool
     __pool = await aiomysql.create_pool(
@@ -23,6 +27,9 @@ async def create_pool(loop, **kwargs):
     logging.info("Connect successful")
 
 async def select(sql, params=[], size=None):
+    """
+    Wrap SELECT and retrurn a list of selected rows
+    """
     logging.info("SQL: {} {}".format(sql, params))
     async with __pool.acquire() as conn:
         cur = await conn.cursor(aiomysql.DictCursor)
@@ -36,6 +43,9 @@ async def select(sql, params=[], size=None):
         return rs
 
 async def execute(sql, params=[]):
+    """
+    wrap INSERT UPDATE DELETE and return affected row number
+    """
     logging.info("SQL: {} {}".format(sql, params))
     async with __pool.acquire() as conn:
         cur = await conn.cursor(aiomysql.DictCursor)
@@ -52,6 +62,11 @@ async def execute(sql, params=[]):
 
 
 class ModelMeta(type):
+    """
+    Metaclass of building Model
+    add table infomation to Model
+    discriptor's storage_name is also assigned here
+    """
     def __init__(cls, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
         if not name == "Model":
@@ -77,6 +92,10 @@ class ModelMeta(type):
 
 
 class Field:
+    """
+    Field base class
+    A discriptor that validate specific field and raise error
+    """
     def __init__(self, column_type, primary_key, default):
         self.storage_name = None
         self.column_type = column_type
@@ -138,6 +157,9 @@ class FloatField(Field):
 
 
 class Model(metaclass=ModelMeta):
+    """
+    Model base class which maps table in database
+    """
     def __init__(self, **kwargs):
         for attr in set(self.__fields__) & set(kwargs.keys()):
             setattr(self, attr, kwargs.pop(attr))
@@ -219,27 +241,27 @@ class Model(metaclass=ModelMeta):
             ))
 
 
-class Test(Model):
-    name = StringField()
-    id = IntegerField(primary_key=True)
+# class Test(Model):
+#     name = StringField()
+#     id = IntegerField(primary_key=True)
 
 
-def newmethod640():
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(create_pool(
-        loop, user="root", password="solar", db="indigo"))
-    a = Test(name="I finished the orm!", id=1)
-    loop.run_until_complete(a.insert())
-    res = loop.run_until_complete(Test.get())
-    print([(x.id, x.name) for x in res])
-    a.name = "I know I can do it"
-    loop.run_until_complete(a.update())
-    res = loop.run_until_complete(Test.get())
-    print([(x.id, x.name) for x in res])
-    loop.run_until_complete(a.delete())
-    res = loop.run_until_complete(Test.get())
-    print([(x.id, x.name) for x in res])
+# def unit_test():
+#     loop = asyncio.get_event_loop()
+#     loop.run_until_complete(create_pool(
+#         loop, user="root", password="solar", db="indigo"))
+#     a = Test(name="I finished the orm!", id=1)
+#     loop.run_until_complete(a.insert())
+#     res = loop.run_until_complete(Test.get())
+#     print([(x.id, x.name) for x in res])
+#     a.name = "I know I can do it"
+#     loop.run_until_complete(a.update())
+#     res = loop.run_until_complete(Test.get())
+#     print([(x.id, x.name) for x in res])
+#     loop.run_until_complete(a.delete())
+#     res = loop.run_until_complete(Test.get())
+#     print([(x.id, x.name) for x in res])
 
-if __name__ == "__main__":
-    newmethod640()
+# if __name__ == "__main__":
+#     unit_test()
  
