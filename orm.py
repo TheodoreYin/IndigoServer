@@ -24,7 +24,7 @@ async def create_pool(loop, **kwargs):
 
 async def select(sql, params=[], size=None):
     logging.info("SQL: {} {}".format(sql, params))
-    async with __pool.get() as conn:
+    async with __pool.acquire() as conn:
         cur = await conn.cursor(aiomysql.DictCursor)
         await cur.execute(sql.replace("?", "%s"), params)
         if size:
@@ -37,7 +37,7 @@ async def select(sql, params=[], size=None):
 
 async def execute(sql, params=[]):
     logging.info("SQL: {} {}".format(sql, params))
-    async with __pool.get() as conn:
+    async with __pool.acquire() as conn:
         cur = await conn.cursor(aiomysql.DictCursor)
         try:
             await cur.execute(sql.replace("?", "%s"), params)
@@ -69,12 +69,11 @@ class ModelMeta(type):
                         if primary_key:
                             raise RuntimeError("Duplicated primary key")
                         primary_key = k
-                    else:
-                        fields.append(k)
-            cls.__table = table_name
-            cls.__mapping = mapping
-            cls.__fields = fields
-            cls.__primary_key = primary_key
+                    fields.append(k)
+            cls.__table__ = table_name
+            cls.__mapping__ = mapping
+            cls.__fields__ = fields
+            cls.__primary_key__ = primary_key
 
 
 class Field:
@@ -91,14 +90,19 @@ class Field:
 
     def validate(self, d_type, value):
         if not isinstance(value, d_type):
-            raise ValueError("Type {} expected, got {}".format(
-                d_type.__name__, value
+            raise TypeError("Type {} expected, got {}".format(
+                d_type.__name__, type(value)
             ))
         return value
 
     def __set__(self, instance, value):
         value = self.validate(instance, value)
         setattr(instance, self.storage_name, value)
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        return getattr(instance, self.storage_name)
 
 
 class IntegerField(Field):
@@ -134,6 +138,14 @@ class FloatField(Field):
 
 
 class Model(metaclass=ModelMeta):
+    def __init__(self, **kwargs):
+        for attr in set(self.__fields__) & set(kwargs.keys()):
+            setattr(self, attr, kwargs.pop(attr))
+        if len(kwargs):
+            raise AttributeError("Unknown attribute for type {}: {}".format(
+                self.__class__.__name__, kwargs
+            ))
+
     @classmethod
     async def get(cls, **kwargs):
         sql = ["select * from `{}`".format(cls.__name__)]
@@ -161,26 +173,73 @@ class Model(metaclass=ModelMeta):
                 args.extend(list(limit))
             else:
                 raise ValueError("limit must be an integer or binary sequence")
-        sql = " ".join(sql)+";"
-        return sql, args
+        sql = " ".join(sql) + ";"
         rs = await select(sql, args)
         return [cls(**each) for each in rs]
 
+    @staticmethod
+    def create_args_string(num):
+        return ", ".join(["?"] * num)
+
+    @staticmethod
+    def create_kwargs_string(keys):
+        return ", ".join(["`{}`=?".format(key) for key in keys])
+
+    async def insert(self):
+        sql = "insert into `{}` values ({});".format(
+            self.__table__, self.create_args_string(len(self.__fields__))
+        )
+        args = [getattr(self, name) for name in self.__fields__]
+        if await execute(sql, args) < 1:
+            logging.warn("Failed to insert row. Primary key: {}".format(
+                getattr(self, self.__primary_key__)
+            ))
+
+    async def update(self):
+        sql = "update `{}` set {} where `{}`=?;".format(
+            self.__table__,
+            self.create_kwargs_string(self.__fields__),
+            self.__primary_key__
+        )
+        args = [getattr(self, name) for name in self.__fields__]
+        args.append(getattr(self, self.__primary_key__))
+        if await execute(sql, args) < 1:
+            logging.warn("Failed to update row. Primary key: {}".format(
+                getattr(self, self.__primary_key__)
+            ))
+
+    async def delete(self):
+        sql = "delete from `{}` where `{}`=?".format(
+            self.__table__, self.__primary_key__
+        )
+        args = [getattr(self, self.__primary_key__)]
+        if await execute(sql, args) < 1:
+            logging.warn("Failed to delete row. Primary key: {}".format(
+                getattr(self, self.__primary_key__)
+            ))
 
 
+class Test(Model):
+    name = StringField()
+    id = IntegerField(primary_key=True)
 
 
+def newmethod640():
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(create_pool(
+        loop, user="root", password="solar", db="indigo"))
+    a = Test(name="I finished the orm!", id=1)
+    loop.run_until_complete(a.insert())
+    res = loop.run_until_complete(Test.get())
+    print([(x.id, x.name) for x in res])
+    a.name = "I know I can do it"
+    loop.run_until_complete(a.update())
+    res = loop.run_until_complete(Test.get())
+    print([(x.id, x.name) for x in res])
+    loop.run_until_complete(a.delete())
+    res = loop.run_until_complete(Test.get())
+    print([(x.id, x.name) for x in res])
 
-
-# if __name__ == "__main__":
-#     loop = asyncio.get_event_loop()
-#     loop.run_until_complete(create_pool(
-#         loop,
-#         user="root",
-#         password="solar",
-#         db="indigo"
-#     ))
-#     # loop.run_until_complete(execute("insert into test values (%s);", ["Hello mysql"]))
-#     print(loop.run_until_complete(select("select * from test;")))
-#     __pool.close()
-#     loop.run_until_complete(__pool.wait_closed())
+if __name__ == "__main__":
+    newmethod640()
+ 
