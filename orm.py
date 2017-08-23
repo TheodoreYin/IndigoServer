@@ -1,7 +1,7 @@
 import aiomysql
 import logging
 import numbers
-from collections.abc import Sequence
+from collections.abc import Sequence, Iterator
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -70,24 +70,25 @@ class ModelMeta(type):
         super().__init__(name, bases, attr_dict)
         if not name == "Model":
             table_name = name
-            mapping = {}
+            default_mapping = {}
             fields = []
             primary_key = None
             for k, v in attr_dict.items():
                 if isinstance(v, Field):
-                    mapping[k] = v
                     v.storage_name = "_{}#{}".format(
                         type(v).__name__, k
                     )
+                    fields.append(k)
                     if v.primary_key:
                         if primary_key:
                             raise RuntimeError("Duplicated primary key")
                         primary_key = k
-                    fields.append(k)
+                    if isinstance(v.default, Iterator):
+                        default_mapping[k] = v.default
             cls.__table__ = table_name
-            cls.__mapping__ = mapping
             cls.__fields__ = fields
             cls.__primary_key__ = primary_key
+            cls.__default__ = default_mapping
 
 
 class Field:
@@ -106,7 +107,7 @@ class Field:
             self.__class__.__name__, self.__dict__
         )
 
-    def validate(self, d_type, value):
+    def validate(self, instance, d_type, value):
         if not isinstance(value, d_type):
             raise TypeError("Type {} expected, got {}".format(
                 d_type.__name__, type(value)
@@ -114,7 +115,7 @@ class Field:
         return value
 
     def __set__(self, instance, value):
-        value = self.validate(instance, value)
+        value = self.validate(instance, None, value)
         setattr(instance, self.storage_name, value)
 
     def __get__(self, instance, owner):
@@ -127,32 +128,32 @@ class IntegerField(Field):
     def __init__(self, primary_key=False, default=None):
         super().__init__("bigint", primary_key, default)
 
-    def validate(self, d_type, value):
-        return super().validate(numbers.Integral, value)
+    def validate(self, instance, d_type, value):
+        return super().validate(instance, numbers.Integral, value)
 
 
 class StringField(Field):
     def __init__(self, primary_key=False, default=None, ddl="Varchar(100)"):
         super().__init__(ddl, primary_key, default)
 
-    def validate(self, d_type, value):
-        return super().validate(str, value)
+    def validate(self, instance, d_type, value):
+        return super().validate(instance, str, value)
 
 
 class BooleanField(Field):
     def __init__(self, primary_key=False, default=None):
         super().__init__("boolean", primary_key, default)
 
-    def validate(self, d_type, value):
-        return super().validate(bool, value)
+    def validate(self, instance, d_type, value):
+        return super().validate(instance, bool, value)
 
 
 class FloatField(Field):
     def __init__(self, primary_key=False, default=None):
         super().__init__("real", primary_key, default)
 
-    def validate(self, d_type, value):
-        return super().validate(numbers.Rational, value)
+    def validate(self, instance, d_type, value):
+        return super().validate(instance, numbers.Rational, value)
 
 
 class Model(metaclass=ModelMeta):
@@ -160,10 +161,13 @@ class Model(metaclass=ModelMeta):
     Model base class which maps table in database
     """
     def __init__(self, **kwargs):
+        default_used = set(self.__default__.keys()) - set(kwargs.keys())
         for attr in set(self.__fields__) & set(kwargs.keys()):
             setattr(self, attr, kwargs.pop(attr))
+        for attr in default_used:
+            setattr(self, attr, next(self.__default__[attr]))
         if len(kwargs):
-            raise AttributeError("Unknown attribute for type {}: {}".format(
+            raise AttributeError("Unused attribute for type {}: {}".format(
                 self.__class__.__name__, kwargs
             ))
 
@@ -239,28 +243,30 @@ class Model(metaclass=ModelMeta):
                 getattr(self, self.__primary_key__)
             ))
 
+    
+from itertools import count
+import asyncio
+class Test(Model):
+    name = StringField()
+    id = IntegerField(primary_key=True, default=count(1))
 
-# class Test(Model):
-#     name = StringField()
-#     id = IntegerField(primary_key=True)
 
+def unit_test():
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(create_pool(
+        loop, user="root", password="solar", db="indigo"))
+    a = Test(name="I finished the orm!")
+    loop.run_until_complete(a.insert())
+    res = loop.run_until_complete(Test.get())
+    print([(x.id, x.name) for x in res])
+    a.name = "I know I can do it"
+    loop.run_until_complete(a.update())
+    res = loop.run_until_complete(Test.get())
+    print([(x.id, x.name) for x in res])
+    loop.run_until_complete(a.delete())
+    res = loop.run_until_complete(Test.get())
+    print([(x.id, x.name) for x in res])
 
-# def unit_test():
-#     loop = asyncio.get_event_loop()
-#     loop.run_until_complete(create_pool(
-#         loop, user="root", password="solar", db="indigo"))
-#     a = Test(name="I finished the orm!", id=1)
-#     loop.run_until_complete(a.insert())
-#     res = loop.run_until_complete(Test.get())
-#     print([(x.id, x.name) for x in res])
-#     a.name = "I know I can do it"
-#     loop.run_until_complete(a.update())
-#     res = loop.run_until_complete(Test.get())
-#     print([(x.id, x.name) for x in res])
-#     loop.run_until_complete(a.delete())
-#     res = loop.run_until_complete(Test.get())
-#     print([(x.id, x.name) for x in res])
-
-# if __name__ == "__main__":
-#     unit_test()
+if __name__ == "__main__":
+    unit_test()
  
