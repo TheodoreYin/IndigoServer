@@ -244,29 +244,29 @@ class Model(metaclass=ModelMeta):
             ))
 
     
-from itertools import count
-import asyncio
-class Test(Model):
-    name = StringField()
-    id = IntegerField(primary_key=True, default=count(1))
+# from itertools import count
+# import asyncio
+# class Test(Model):
+#     name = StringField()
+#     id = IntegerField(primary_key=True, default=count(1))
 
 
-def unit_test():
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(create_pool(
-        loop, user="root", password="solar", db="indigo"))
-    a = Test(name="I finished the orm!")
-    loop.run_until_complete(a.insert())
-    res = loop.run_until_complete(Test.get())
-    print([(x.id, x.name) for x in res])
-    a.name = "I know I can do it"
-    loop.run_until_complete(a.update())
-    res = loop.run_until_complete(Test.get())
-    print([(x.id, x.name) for x in res])
-    loop.run_until_complete(a.delete())
-    res = loop.run_until_complete(Test.get())
-    print([(x.id, x.name) for x in res])
+# def unit_test():
+#     loop = asyncio.get_event_loop()
+#     loop.run_until_complete(create_pool(
+#         loop, user="root", password="solar", db="indigo"))
+#     a = Test(name="I finished the orm!")
+#     loop.run_until_complete(a.insert())
+#     res = loop.run_until_complete(Test.get())
+#     print([(x.id, x.name) for x in res])
+#     a.name = "I know I can do it"
+#     loop.run_until_complete(a.update())
+#     res = loop.run_until_complete(Test.get())
+#     print([(x.id, x.name) for x in res])
+#     loop.run_until_complete(a.delete())
+#     res = loop.run_until_complete(Test.get())
+#     print([(x.id, x.name) for x in res])
 
-if __name__ == "__main__":
-    unit_test()
+# if __name__ == "__main__":
+#     unit_test()
  
